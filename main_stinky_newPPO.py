@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 import numpy as np
-from PPO import Agent
+from new_PPO import Agent
 import gymnasium as gym
 import time
 from torch.distributions.categorical import Categorical
