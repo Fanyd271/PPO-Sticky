@@ -33,8 +33,6 @@ def make_dir(path):
 
 
 def sample_actions(action_new, action_old, R):
-    idx = [i for i,x in enumerate(action_old) if x == -1 ]
-    action_old[idx] = action_new[idx]
     action_selected = action_new
     for i in range(action_new.shape[0]):
         random_number = random.random()
@@ -121,7 +119,6 @@ def train_ppo(agent, device, run_name, total_timesteps, seed, num_steps, num_env
     next_done = torch.zeros(num_envs).to(device)
 
     # Initialize the actions old buffer
-    actions_old[-1] = -1 * torch.ones_like(actions_old[-1]) # this is consistent with the following code
     # Collect the data
     for iteration in range(1, num_iterations + 1):
         if anneal_lr:
@@ -152,7 +149,7 @@ def train_ppo(agent, device, run_name, total_timesteps, seed, num_steps, num_env
                     if info and "episode" in info:
                         current_return = info["episode"]["r"]
                         idx = [i for i,x in enumerate(infos["_final_info"]) if x == True ] # find the finished agents
-                        actions_old[k + 1][idx] = -1 # this stands for we need to initialize
+                        actions_old[k + 1][idx] = 0 # this stands for we need to initialize
                         if record_info:
                             writer.add_scalar("charts/episodic_return", info["episode"]["r"], train_step)
                             writer.add_scalar("charts/episodic_length", info["episode"]["l"], train_step)

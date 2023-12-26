@@ -33,8 +33,6 @@ def make_dir(path):
 
 
 def sample_actions(action_new, action_old, R):
-    idx = [i for i,x in enumerate(action_old) if x == -1 ]
-    action_old[idx] = action_new[idx]
     action_selected = action_new
     for i in range(action_new.shape[0]):
         random_number = random.random()
@@ -72,12 +70,12 @@ def wrap_env(env_id, *args, render=False, capture_video=False):
 
 
 # Generalized advantage estimation
-def GAE(agent, values, rewards, dones, gamma, gae_lambda, notend_game, next_ob):
+def GAE(agent, values, rewards, dones, gamma, gae_lambda, notend_game, next_ob, actions_old_end):
     num_steps = rewards.shape[0]
     with torch.no_grad():
         advantages =torch.zeros_like(rewards)
         delta = torch.zeros_like(rewards)
-        next_value = agent.get_value(next_ob).reshape(1, -1)
+        next_value = agent.get_value(next_ob, actions_old_end).reshape(1, -1)
         delta[-1] = rewards[-1] + gamma * next_value * notend_game - values[-1]
         advantages[-1] = delta[-1]
         for t in reversed(range(num_steps - 1)):
@@ -89,7 +87,7 @@ def GAE(agent, values, rewards, dones, gamma, gae_lambda, notend_game, next_ob):
 
 # Training Loop
 def train_ppo(agent, device, run_name, total_timesteps, seed, num_steps, num_envs, minibatches, learning_rate, anneal_lr=True, gamma=0.99,
-              update_epochs=4, gae_lambda=0.95, clip_eps=0.1, max_grad_norm = 0.5, ent_coef=0.01, vf_coef=0.5, clip_threshold=0.1, record_info=True):
+              update_epochs=4, gae_lambda=0.95, clip_eps=0.1, max_grad_norm = 0.5, ent_coef=0.01, vf_coef=0.5, clip_threshold=0.1, record_info=True, R=0.75):
     start_time = time.time()
     if record_info:
         writer = SummaryWriter(f"runs/{run_name}")
@@ -121,7 +119,6 @@ def train_ppo(agent, device, run_name, total_timesteps, seed, num_steps, num_env
     next_done = torch.zeros(num_envs).to(device)
 
     # Initialize the actions old buffer
-    actions_old[-1] = -1 * torch.ones_like(actions_old[-1]) # this is consistent with the following code
     # Collect the data
     for iteration in range(1, num_iterations + 1):
         if anneal_lr:
@@ -134,12 +131,12 @@ def train_ppo(agent, device, run_name, total_timesteps, seed, num_steps, num_env
             obs[k] = next_ob
             dones[k] = next_done
             with torch.no_grad():
-                action, logprob, _, value = agent.get_action_and_value(next_ob)
+                action, logprob, _, value = agent.get_action_and_value(next_ob, actions_old[k])
                 values[k] = value.flatten()
                 actions[k] = action
                 logprobs[k] = logprob
             # sample the action
-            action, actions_old[k] = sample_actions(action, actions_old[k].long(), 0.75) # 25% probs to choose the present action
+            action, actions_old[k] = sample_actions(action, actions_old[k].long(), R) # 25% probs to choose the present action
             actions_old[k + 1] = action
             # train
             next_ob, reward, terminations, truncations, infos = envs.step(action.cpu().numpy())
@@ -152,12 +149,12 @@ def train_ppo(agent, device, run_name, total_timesteps, seed, num_steps, num_env
                     if info and "episode" in info:
                         current_return = info["episode"]["r"]
                         idx = [i for i,x in enumerate(infos["_final_info"]) if x == True ] # find the finished agents
-                        actions_old[k + 1][idx] = -1 # this stands for we need to initialize
+                        actions_old[k + 1][idx] = 0 
                         if record_info:
                             writer.add_scalar("charts/episodic_return", info["episode"]["r"], train_step)
                             writer.add_scalar("charts/episodic_length", info["episode"]["l"], train_step)
         notend_game = 1 - next_done # whether the game ends
-        advantages, returns = GAE(agent, values, rewards, dones, gamma, gae_lambda, notend_game, next_ob)
+        advantages, returns = GAE(agent, values, rewards, dones, gamma, gae_lambda, notend_game, next_ob, actions_old[-1])
         # train the network
         inds = np.arange(batch_size)
         minibatchsize = batch_size // minibatches
@@ -166,6 +163,7 @@ def train_ppo(agent, device, run_name, total_timesteps, seed, num_steps, num_env
         batch_obs = obs.reshape((-1,) + envs.single_observation_space.shape)
         batch_logprobs = logprobs.reshape(-1)
         batch_actions = actions.reshape((-1,) + envs.single_action_space.shape)
+        batch_actions_old = actions_old[0:-1].reshape((-1,) + envs.single_action_space.shape)
         batch_advantages = advantages.reshape(-1)
         batch_returns = returns.reshape(-1)
         batch_values = values.reshape(-1)
@@ -175,7 +173,8 @@ def train_ppo(agent, device, run_name, total_timesteps, seed, num_steps, num_env
             for start_ind in range(0, batch_size, minibatchsize):
                 end_ind = start_ind + minibatchsize
                 selected_inds = inds[start_ind:end_ind]
-                _, newlogprob, entropy, newvalue = agent.get_action_and_value(batch_obs[selected_inds], batch_actions.long()[selected_inds])
+                _, newlogprob, entropy, newvalue = agent.get_action_and_value(batch_obs[selected_inds], 
+                                                    batch_actions_old.long()[selected_inds], action=batch_actions.long()[selected_inds])
                 logratio = newlogprob - batch_logprobs[selected_inds]
                 ratio = logratio.exp()
 
@@ -254,7 +253,7 @@ if __name__ == "__main__":
     )
     agent = Agent(envs).to(device)
 
-    total_timesteps = 20000000 # 20M
+    total_timesteps = 50000000 # 50M
     today = datetime.datetime.today()
     run_name = f"{env_id}_{seed}_{today.day}_{datetime.datetime.now().hour}h{datetime.datetime.now().minute}m_{total_timesteps}_revised"
     num_steps = 128
