@@ -33,7 +33,7 @@ def make_dir(path):
 
 
 def sample_actions(action_new, action_old, R):
-    action_selected = action_new
+    action_selected = torch.zeros_like(action_new, dtype=torch.int32)
     for i in range(action_new.shape[0]):
         random_number = random.random()
         if random_number < R:
@@ -248,7 +248,7 @@ def test(device, env_id, path, episodes, render=True, capture_video=False):
 
 
 if __name__ == "__main__":
-    seed = 1
+    seed = 15
     seed_initialization(seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     env_id = "PongNoFrameskip-v4"
@@ -270,5 +270,5 @@ if __name__ == "__main__":
     #           record_info=True, anneal_lr=True)
     
     # test the model
-    # run_name = f"{env_id}_{seed}_{27}_{11}h{37}m_{20000}_revised"
-    # test(device, env_id, run_name, 1, render=True, capture_video=False)
+    run_name = f"{env_id}_{1}_{26}_{17}h{34}m_{50000000}_revised"
+    test(device, env_id, run_name, 1, render=False, capture_video=True)

@@ -33,7 +33,7 @@ def make_dir(path):
 
 
 def sample_actions(action_new, action_old, R):
-    action_selected = action_new
+    action_selected = torch.zeros_like(action_new, dtype=torch.int32)
     for i in range(action_new.shape[0]):
         random_number = random.random()
         if random_number < R:
