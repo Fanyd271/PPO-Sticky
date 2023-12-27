@@ -262,7 +262,7 @@ if __name__ == "__main__":
 
     # total_timesteps = 20000 # 50M
     # today = datetime.datetime.today()
-    # run_name = f"{env_id}_{seed}_{today.day}_{datetime.datetime.now().hour}h{datetime.datetime.now().minute}m_{total_timesteps}_revised"
+    # run_name = f"{env_id}_{seed}_{today.day}_{datetime.datetime.now().hour}h{datetime.datetime.now().minute}m_{total_timesteps}_newPPO"
     # num_steps = 128
     # minibatches = 4
     # learning_rate = 2.5e-4
@@ -270,5 +270,5 @@ if __name__ == "__main__":
     #           record_info=True, anneal_lr=True)
     
     # test the model
-    run_name = f"{env_id}_{1}_{26}_{17}h{34}m_{50000000}_revised"
-    test(device, env_id, run_name, 1, render=False, capture_video=False)
+    run_name = f"{env_id}_{1}_{26}_{17}h{34}m_{50000000}_newPPO"
+    test(device, env_id, run_name, 1, render=True, capture_video=False)
