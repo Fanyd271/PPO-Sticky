@@ -40,7 +40,7 @@ def sample_actions(action_new, action_old, R):
             action_selected[i] = action_new[i]
         else:
             action_selected[i] = action_old[i]
-    return action_selected, action_old
+    return action_selected
 
 
 # PPO Neural Network Model
@@ -136,7 +136,7 @@ def train_ppo(agent, device, run_name, total_timesteps, seed, num_steps, num_env
                 actions[k] = action
                 logprobs[k] = logprob
             # sample the action
-            action, actions_old[k] = sample_actions(action, actions_old[k].long(), R) # 25% probs to choose the present action
+            action = sample_actions(action, actions_old[k].long(), R) # 25% probs to choose the present action
             actions_old[k + 1] = action
             # train
             next_ob, reward, terminations, truncations, infos = envs.step(action.cpu().numpy())
@@ -214,25 +214,32 @@ def train_ppo(agent, device, run_name, total_timesteps, seed, num_steps, num_env
     envs.close()
     if record_info:
         make_dir("model/"+run_name)
-        torch.save(agent.actor.state_dict(), "./model/"+run_name+"/Actor.pth")
-        torch.save(agent.critic.state_dict(), "./model/"+run_name+"/Critic.pth")
-        torch.save(agent.network.state_dict(), "./model/"+run_name+"/Network.pth")
+        torch.save(agent.al1.state_dict(), "./model/"+run_name+"/al1.pth")
+        torch.save(agent.al2.state_dict(), "./model/"+run_name+"/al2.pth")
+        torch.save(agent.cl1.state_dict(), "./model/"+run_name+"/cl1.pth")
+        torch.save(agent.cl2.state_dict(), "./model/"+run_name+"/cl2.pth")
+        torch.save(agent.network.state_dict(), "./model/"+run_name+"/network.pth")
 
 
 def test(device, env_id, path, episodes, render=True, capture_video=False):
     print("--------Start testing-----------")
     env = wrap_env(env_id, path, render=render, capture_video=capture_video)()
     agent = Agent(env).to(device)
-    agent.actor.load_state_dict(torch.load("./model/"+path+"/Actor.pth"))
-    agent.critic.load_state_dict(torch.load("./model/"+path+"/Critic.pth"))
-    agent.network.load_state_dict(torch.load("./model/"+path+"/Network.pth"))
+    agent.al1.load_state_dict(torch.load("./model/"+path+"/al1.pth"))
+    agent.al2.load_state_dict(torch.load("./model/"+path+"/al2.pth"))
+    agent.cl1.load_state_dict(torch.load("./model/"+path+"/cl1.pth"))
+    agent.cl2.load_state_dict(torch.load("./model/"+path+"/cl2.pth"))
+    agent.network.load_state_dict(torch.load("./model/"+path+"/network.pth"))
     for _ in range(episodes):
         state = agent.envs.reset() 
         next_ob = torch.Tensor(state[0]).to(device).unsqueeze(0)
+        action_old = torch.zeros((1, ), dtype=torch.int32).to(device)
         done = False
 
         while not done:
-            action, _, _, _ = agent.get_action_and_value(next_ob) 
+            action, _, _, _ = agent.get_action_and_value(next_ob, action_old)
+            action = sample_actions(action, action_old, 0.75) # 25% probs to choose the present action
+            action_old = action
             next_ob, _, terminations, truncations, info = agent.envs.step(action[0].cpu().numpy())
             next_ob = torch.Tensor(next_ob).to(device).unsqueeze(0)
             done = np.logical_or(terminations, truncations)
@@ -247,22 +254,21 @@ if __name__ == "__main__":
     env_id = "PongNoFrameskip-v4"
 
     # training parameters
-    num_envs = 8
-    envs = gym.vector.SyncVectorEnv(
-        [wrap_env(env_id) for _ in range(num_envs)]
-    )
-    agent = Agent(envs).to(device)
+    # num_envs = 8
+    # envs = gym.vector.SyncVectorEnv(
+    #     [wrap_env(env_id) for _ in range(num_envs)]
+    # )
+    # agent = Agent(envs).to(device)
 
-    total_timesteps = 50000000 # 50M
-    today = datetime.datetime.today()
-    run_name = f"{env_id}_{seed}_{today.day}_{datetime.datetime.now().hour}h{datetime.datetime.now().minute}m_{total_timesteps}_revised"
-    num_steps = 128
-    minibatches = 4
-    learning_rate = 2.5e-4
-    train_ppo(agent, device, run_name, total_timesteps, seed, num_steps, num_envs, minibatches, learning_rate,
-              record_info=False, anneal_lr=True)
+    # total_timesteps = 20000 # 50M
+    # today = datetime.datetime.today()
+    # run_name = f"{env_id}_{seed}_{today.day}_{datetime.datetime.now().hour}h{datetime.datetime.now().minute}m_{total_timesteps}_revised"
+    # num_steps = 128
+    # minibatches = 4
+    # learning_rate = 2.5e-4
+    # train_ppo(agent, device, run_name, total_timesteps, seed, num_steps, num_envs, minibatches, learning_rate,
+    #           record_info=True, anneal_lr=True)
     
     # test the model
-    # run_name = f"{env_id}_{1}_{24}_{10}h{14}m_{20000000}"
-    # run_name = f"{env_id}_{1}_{24}_{16}h{56}m_{50000000}"
-    # test(device, env_id, run_name, 1, render=False, capture_video=True)
+    # run_name = f"{env_id}_{seed}_{27}_{11}h{37}m_{20000}_revised"
+    # test(device, env_id, run_name, 1, render=True, capture_video=False)
