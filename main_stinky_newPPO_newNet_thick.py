@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 import numpy as np
-from new_PPO import Agent
+from new_PPO_newNet_thick import Agent
 import gymnasium as gym
 import time
 from torch.distributions.categorical import Categorical
@@ -70,12 +70,12 @@ def wrap_env(env_id, *args, render=False, capture_video=False):
 
 
 # Generalized advantage estimation
-def GAE(agent, values, rewards, dones, gamma, gae_lambda, notend_game, next_ob, actions_old_end):
+def GAE(agent, values, rewards, dones, gamma, gae_lambda, notend_game, next_ob):
     num_steps = rewards.shape[0]
     with torch.no_grad():
         advantages =torch.zeros_like(rewards)
         delta = torch.zeros_like(rewards)
-        next_value = agent.get_value(next_ob, actions_old_end).reshape(1, -1)
+        next_value = agent.get_value(next_ob).reshape(1, -1)
         delta[-1] = rewards[-1] + gamma * next_value * notend_game - values[-1]
         advantages[-1] = delta[-1]
         for t in reversed(range(num_steps - 1)):
@@ -87,7 +87,7 @@ def GAE(agent, values, rewards, dones, gamma, gae_lambda, notend_game, next_ob, 
 
 # Training Loop
 def train_ppo(agent, device, run_name, total_timesteps, seed, num_steps, num_envs, minibatches, learning_rate, anneal_lr=True, gamma=0.99,
-              update_epochs=4, gae_lambda=0.95, clip_eps=0.1, max_grad_norm = 0.5, ent_coef=0.01, vf_coef=0.5, clip_threshold=0.1, record_info=True, R=0.75):
+              update_epochs=4, gae_lambda=0.95, clip_eps=0.1, max_grad_norm = 0.5, ent_coef=0.01, vf_coef=0.5, clip_threshold=0.1, record_info=True):
     start_time = time.time()
     if record_info:
         writer = SummaryWriter(f"runs/{run_name}")
@@ -131,12 +131,12 @@ def train_ppo(agent, device, run_name, total_timesteps, seed, num_steps, num_env
             obs[k] = next_ob
             dones[k] = next_done
             with torch.no_grad():
-                action, logprob, _, value = agent.get_action_and_value(next_ob, actions_old[k])
+                action, logprob, _, value = agent.get_action_and_value(next_ob)
                 values[k] = value.flatten()
                 actions[k] = action
                 logprobs[k] = logprob
             # sample the action
-            action = sample_actions(action, actions_old[k].long(), R) # 25% probs to choose the present action
+            action = sample_actions(action, actions_old[k].long(), 0.75) # 25% probs to choose the present action
             actions_old[k + 1] = action
             # train
             next_ob, reward, terminations, truncations, infos = envs.step(action.cpu().numpy())
@@ -149,12 +149,12 @@ def train_ppo(agent, device, run_name, total_timesteps, seed, num_steps, num_env
                     if info and "episode" in info:
                         current_return = info["episode"]["r"]
                         idx = [i for i,x in enumerate(infos["_final_info"]) if x == True ] # find the finished agents
-                        actions_old[k + 1][idx] = 0 
+                        actions_old[k + 1][idx] = 0 # this stands for we need to initialize
                         if record_info:
                             writer.add_scalar("charts/episodic_return", info["episode"]["r"], train_step)
                             writer.add_scalar("charts/episodic_length", info["episode"]["l"], train_step)
         notend_game = 1 - next_done # whether the game ends
-        advantages, returns = GAE(agent, values, rewards, dones, gamma, gae_lambda, notend_game, next_ob, actions_old[-1])
+        advantages, returns = GAE(agent, values, rewards, dones, gamma, gae_lambda, notend_game, next_ob)
         # train the network
         inds = np.arange(batch_size)
         minibatchsize = batch_size // minibatches
@@ -163,7 +163,6 @@ def train_ppo(agent, device, run_name, total_timesteps, seed, num_steps, num_env
         batch_obs = obs.reshape((-1,) + envs.single_observation_space.shape)
         batch_logprobs = logprobs.reshape(-1)
         batch_actions = actions.reshape((-1,) + envs.single_action_space.shape)
-        batch_actions_old = actions_old[0:-1].reshape((-1,) + envs.single_action_space.shape)
         batch_advantages = advantages.reshape(-1)
         batch_returns = returns.reshape(-1)
         batch_values = values.reshape(-1)
@@ -173,8 +172,7 @@ def train_ppo(agent, device, run_name, total_timesteps, seed, num_steps, num_env
             for start_ind in range(0, batch_size, minibatchsize):
                 end_ind = start_ind + minibatchsize
                 selected_inds = inds[start_ind:end_ind]
-                _, newlogprob, entropy, newvalue = agent.get_action_and_value(batch_obs[selected_inds], 
-                                                    batch_actions_old.long()[selected_inds], action=batch_actions.long()[selected_inds])
+                _, newlogprob, entropy, newvalue = agent.get_action_and_value(batch_obs[selected_inds], batch_actions.long()[selected_inds])
                 logratio = newlogprob - batch_logprobs[selected_inds]
                 ratio = logratio.exp()
 
@@ -219,6 +217,7 @@ def train_ppo(agent, device, run_name, total_timesteps, seed, num_steps, num_env
         torch.save(agent.cl1.state_dict(), "./model/"+run_name+"/cl1.pth")
         torch.save(agent.cl2.state_dict(), "./model/"+run_name+"/cl2.pth")
         torch.save(agent.network.state_dict(), "./model/"+run_name+"/network.pth")
+        torch.save(agent.infer_last.state_dict(), "./model/"+run_name+"/infer_last.pth")
 
 
 def test(device, env_id, path, episodes, render=True, capture_video=False):
@@ -230,6 +229,7 @@ def test(device, env_id, path, episodes, render=True, capture_video=False):
     agent.cl1.load_state_dict(torch.load("./model/"+path+"/cl1.pth"))
     agent.cl2.load_state_dict(torch.load("./model/"+path+"/cl2.pth"))
     agent.network.load_state_dict(torch.load("./model/"+path+"/network.pth"))
+    agent.infer_last.load_state_dict(torch.load("./model/"+path+"/infer_last.pth"))
     for _ in range(episodes):
         state = agent.envs.reset() 
         next_ob = torch.Tensor(state[0]).to(device).unsqueeze(0)
@@ -237,7 +237,7 @@ def test(device, env_id, path, episodes, render=True, capture_video=False):
         done = False
 
         while not done:
-            action, _, _, _ = agent.get_action_and_value(next_ob, action_old)
+            action, _, _, _ = agent.get_action_and_value(next_ob)
             action = sample_actions(action, action_old, 0.75) # 25% probs to choose the present action
             action_old = action
             next_ob, _, terminations, truncations, info = agent.envs.step(action[0].cpu().numpy())
@@ -248,27 +248,27 @@ def test(device, env_id, path, episodes, render=True, capture_video=False):
 
 
 if __name__ == "__main__":
-    seed = 99
+    seed = 1
     seed_initialization(seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     env_id = "PongNoFrameskip-v4"
 
     # training parameters
-    # num_envs = 8
-    # envs = gym.vector.SyncVectorEnv(
-    #     [wrap_env(env_id) for _ in range(num_envs)]
-    # )
-    # agent = Agent(envs).to(device)
+    num_envs = 8
+    envs = gym.vector.SyncVectorEnv(
+        [wrap_env(env_id) for _ in range(num_envs)]
+    )
+    agent = Agent(envs).to(device)
 
-    # total_timesteps = 20000 # 50M
-    # today = datetime.datetime.today()
-    # run_name = f"{env_id}_{seed}_{today.day}_{datetime.datetime.now().hour}h{datetime.datetime.now().minute}m_{total_timesteps}_revised"
-    # num_steps = 128
-    # minibatches = 4
-    # learning_rate = 2.5e-4
-    # train_ppo(agent, device, run_name, total_timesteps, seed, num_steps, num_envs, minibatches, learning_rate,
-    #           record_info=True, anneal_lr=True)
+    total_timesteps = 50000000 # 50M
+    today = datetime.datetime.today()
+    run_name = f"{env_id}_{seed}_{today.day}_{datetime.datetime.now().hour}h{datetime.datetime.now().minute}m_{total_timesteps}_newPPO_newNet_thick"
+    num_steps = 128
+    minibatches = 4
+    learning_rate = 2.5e-4
+    train_ppo(agent, device, run_name, total_timesteps, seed, num_steps, num_envs, minibatches, learning_rate,
+              record_info=True, anneal_lr=True)
     
     # test the model
-    run_name = f"{env_id}_{1}_{26}_{17}h{34}m_{50000000}_revised"
-    test(device, env_id, run_name, 1, render=False, capture_video=False)
+    # run_name = f"{env_id}_{seed}_{27}_{11}h{37}m_{20000}_vanilla"
+    # test(device, env_id, run_name, 1, render=True, capture_video=False)
