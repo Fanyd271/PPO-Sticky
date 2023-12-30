@@ -29,25 +29,23 @@ class Agent(nn.Module):
             nn.ReLU(),
         )
         self.envs = envs
-        self.infer_last = layer_init(nn.Linear(512, 1))
-        self.al1 = layer_init(nn.Linear(512 + 1 , 64), std=0.01)
-        self.al2 = layer_init(nn.Linear(64, 6), std=0.01)
-        self.cl1 = layer_init(nn.Linear(512 + 1, 64), std=1)
-        self.cl2 = layer_init(nn.Linear(64, 1), std=1)
+        self.infer_last = layer_init(nn.Linear(512, 10), std=1)
+        self.actor = layer_init(nn.Linear(512 + 10 , 6), std=0.01)
+        self.critic = layer_init(nn.Linear(512 + 10, 1), std=1)
 
     def get_action_and_value(self, x, action=None):
         hidden = self.network(x / 255.0)
         last_action = F.relu(self.infer_last(hidden))
         sta_act_pair = torch.cat([hidden, last_action], 1)
-        logits = self.al2(F.relu(self.al1(sta_act_pair)))
+        logits = self.actor(sta_act_pair)
         probs = Categorical(logits=logits)  # sigmoid
         if action is None:
             action = probs.sample()
-        return action, probs.log_prob(action), probs.entropy(), self.cl2(F.relu(self.cl1(sta_act_pair)))
+        return action, probs.log_prob(action), probs.entropy(), self.critic(sta_act_pair)
     
     def get_value(self, x):
         hidden = self.network(x / 255.0)
         last_action = F.relu(self.infer_last(hidden))
         sta_act_pair = torch.cat([hidden, last_action], 1)
-        return self.cl2(F.relu(self.cl1(sta_act_pair)))
+        return self.critic(sta_act_pair)
 

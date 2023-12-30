@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 import numpy as np
-from new_PPO_newNet_light import Agent
+from new_PPO_newNet_thick import Agent
 import gymnasium as gym
 import time
 from torch.distributions.categorical import Categorical
@@ -87,7 +87,7 @@ def GAE(agent, values, rewards, dones, gamma, gae_lambda, notend_game, next_ob):
 
 # Training Loop
 def train_ppo(agent, device, run_name, total_timesteps, seed, num_steps, num_envs, minibatches, learning_rate, anneal_lr=True, gamma=0.99,
-              update_epochs=4, gae_lambda=0.95, clip_eps=0.1, max_grad_norm = 0.5, ent_coef=0.01, vf_coef=0.5, clip_threshold=0.1, record_info=True):
+              update_epochs=4, gae_lambda=0.95, clip_eps=0.1, max_grad_norm = 0.5, ent_coef=0.01, vf_coef=0.5, clip_threshold=0.1, record_info=True, early_stop = -1):
     start_time = time.time()
     if record_info:
         writer = SummaryWriter(f"runs/{run_name}")
@@ -209,11 +209,24 @@ def train_ppo(agent, device, run_name, total_timesteps, seed, num_steps, num_env
             writer.add_scalar("losses/policy_loss", sur_loss.item(), train_step)
             writer.add_scalar("losses/entropy", entropy_loss.item(), train_step)
             writer.add_scalar("charts/SPS", int(train_step / (time.time() - start_time)), train_step)
+        if early_stop > 0 and train_step >= early_stop:
+            make_dir("model/"+run_name)
+            torch.save(agent.al1.state_dict(), "./model/"+run_name+f"/al1_{early_stop}.pth")
+            torch.save(agent.al2.state_dict(), "./model/"+run_name+f"/al2_{early_stop}.pth")
+            torch.save(agent.cl1.state_dict(), "./model/"+run_name+f"/cl1_{early_stop}.pth")
+            torch.save(agent.cl2.state_dict(), "./model/"+run_name+f"/cl2_{early_stop}.pth")
+            torch.save(agent.network.state_dict(), "./model/"+run_name+f"/network_{early_stop}.pth")
+            torch.save(agent.infer_last.state_dict(), "./model/"+run_name+f"/infer_last_{early_stop}.pth")
+            print("---------The model early stops----------")
+            envs.close()
+            return
     envs.close()
     if record_info:
         make_dir("model/"+run_name)
-        torch.save(agent.actor.state_dict(), "./model/"+run_name+"/actor.pth")
-        torch.save(agent.critic.state_dict(), "./model/"+run_name+"/critic.pth")
+        torch.save(agent.al1.state_dict(), "./model/"+run_name+"/al1.pth")
+        torch.save(agent.al2.state_dict(), "./model/"+run_name+"/al2.pth")
+        torch.save(agent.cl1.state_dict(), "./model/"+run_name+"/cl1.pth")
+        torch.save(agent.cl2.state_dict(), "./model/"+run_name+"/cl2.pth")
         torch.save(agent.network.state_dict(), "./model/"+run_name+"/network.pth")
         torch.save(agent.infer_last.state_dict(), "./model/"+run_name+"/infer_last.pth")
 
@@ -222,8 +235,10 @@ def test(device, env_id, path, episodes, render=True, capture_video=False):
     print("--------Start testing-----------")
     env = wrap_env(env_id, path, render=render, capture_video=capture_video)()
     agent = Agent(env).to(device)
-    agent.actor.load_state_dict(torch.load("./model/"+path+"/actor.pth"))
-    agent.critic.load_state_dict(torch.load("./model/"+path+"/critic.pth"))
+    agent.al1.load_state_dict(torch.load("./model/"+path+"/al1.pth"))
+    agent.al2.load_state_dict(torch.load("./model/"+path+"/al2.pth"))
+    agent.cl1.load_state_dict(torch.load("./model/"+path+"/cl1.pth"))
+    agent.cl2.load_state_dict(torch.load("./model/"+path+"/cl2.pth"))
     agent.network.load_state_dict(torch.load("./model/"+path+"/network.pth"))
     agent.infer_last.load_state_dict(torch.load("./model/"+path+"/infer_last.pth"))
     for _ in range(episodes):
@@ -256,15 +271,15 @@ if __name__ == "__main__":
     )
     agent = Agent(envs).to(device)
 
-    total_timesteps = 20000 # 50M
+    total_timesteps = 50000000 # 50M
     today = datetime.datetime.today()
-    run_name = f"{env_id}_{seed}_{today.day}_{datetime.datetime.now().hour}h{datetime.datetime.now().minute}m_{total_timesteps}_newPPO_newNet_light"
+    run_name = f"{env_id}_{seed}_{today.day}_{datetime.datetime.now().hour}h{datetime.datetime.now().minute}m_{total_timesteps}_newPPO_newNet_thick"
     num_steps = 128
     minibatches = 4
     learning_rate = 2.5e-4
     train_ppo(agent, device, run_name, total_timesteps, seed, num_steps, num_envs, minibatches, learning_rate,
-              record_info=True, anneal_lr=True)
+              record_info=True, anneal_lr=True, early_stop=15000000)
     
     # test the model
     # run_name = f"{env_id}_{seed}_{27}_{11}h{37}m_{20000}_vanilla"
-    test(device, env_id, run_name, 1, render=True, capture_video=False)
+    # test(device, env_id, run_name, 1, render=True, capture_video=False)
