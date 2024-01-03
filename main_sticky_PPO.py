@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 import numpy as np
-from new_PPO_newNet_thick import Agent
+from PPO_ablation import Agent
 import gymnasium as gym
 import time
 from torch.distributions.categorical import Categorical
@@ -87,7 +87,7 @@ def GAE(agent, values, rewards, dones, gamma, gae_lambda, notend_game, next_ob):
 
 # Training Loop
 def train_ppo(agent, device, run_name, total_timesteps, seed, num_steps, num_envs, minibatches, learning_rate, anneal_lr=True, gamma=0.99,
-              update_epochs=4, gae_lambda=0.95, clip_eps=0.1, max_grad_norm = 0.5, ent_coef=0.01, vf_coef=0.5, clip_threshold=0.1, record_info=True, early_stop = -1):
+              update_epochs=4, gae_lambda=0.95, clip_eps=0.1, max_grad_norm = 0.5, ent_coef=0.01, vf_coef=0.5, clip_threshold=0.1, record_info=True):
     start_time = time.time()
     if record_info:
         writer = SummaryWriter(f"runs/{run_name}")
@@ -209,17 +209,6 @@ def train_ppo(agent, device, run_name, total_timesteps, seed, num_steps, num_env
             writer.add_scalar("losses/policy_loss", sur_loss.item(), train_step)
             writer.add_scalar("losses/entropy", entropy_loss.item(), train_step)
             writer.add_scalar("charts/SPS", int(train_step / (time.time() - start_time)), train_step)
-        if early_stop > 0 and train_step >= early_stop:
-            make_dir("model/"+run_name)
-            torch.save(agent.al1.state_dict(), "./model/"+run_name+f"/al1_{early_stop}.pth")
-            torch.save(agent.al2.state_dict(), "./model/"+run_name+f"/al2_{early_stop}.pth")
-            torch.save(agent.cl1.state_dict(), "./model/"+run_name+f"/cl1_{early_stop}.pth")
-            torch.save(agent.cl2.state_dict(), "./model/"+run_name+f"/cl2_{early_stop}.pth")
-            torch.save(agent.network.state_dict(), "./model/"+run_name+f"/network_{early_stop}.pth")
-            torch.save(agent.infer_last.state_dict(), "./model/"+run_name+f"/infer_last_{early_stop}.pth")
-            print("---------The model early stops----------")
-            envs.close()
-            return
     envs.close()
     if record_info:
         make_dir("model/"+run_name)
@@ -228,7 +217,6 @@ def train_ppo(agent, device, run_name, total_timesteps, seed, num_steps, num_env
         torch.save(agent.cl1.state_dict(), "./model/"+run_name+"/cl1.pth")
         torch.save(agent.cl2.state_dict(), "./model/"+run_name+"/cl2.pth")
         torch.save(agent.network.state_dict(), "./model/"+run_name+"/network.pth")
-        torch.save(agent.infer_last.state_dict(), "./model/"+run_name+"/infer_last.pth")
 
 
 def test(device, env_id, path, episodes, render=True, capture_video=False):
@@ -240,7 +228,6 @@ def test(device, env_id, path, episodes, render=True, capture_video=False):
     agent.cl1.load_state_dict(torch.load("./model/"+path+"/cl1.pth"))
     agent.cl2.load_state_dict(torch.load("./model/"+path+"/cl2.pth"))
     agent.network.load_state_dict(torch.load("./model/"+path+"/network.pth"))
-    agent.infer_last.load_state_dict(torch.load("./model/"+path+"/infer_last.pth"))
     for _ in range(episodes):
         state = agent.envs.reset() 
         next_ob = torch.Tensor(state[0]).to(device).unsqueeze(0)
@@ -271,14 +258,14 @@ if __name__ == "__main__":
     )
     agent = Agent(envs).to(device)
 
-    total_timesteps = 50000000 # 50M
+    total_timesteps = 20000 # 50M
     today = datetime.datetime.today()
-    run_name = f"{env_id}_{seed}_{today.day}_{datetime.datetime.now().hour}h{datetime.datetime.now().minute}m_{total_timesteps}_newPPO_newNet_thick"
+    run_name = f"{env_id}_{seed}_{today.day}_{datetime.datetime.now().hour}h{datetime.datetime.now().minute}m_{total_timesteps}_vanilla"
     num_steps = 128
     minibatches = 4
     learning_rate = 2.5e-4
     train_ppo(agent, device, run_name, total_timesteps, seed, num_steps, num_envs, minibatches, learning_rate,
-              record_info=True, anneal_lr=True, early_stop=15000000)
+              record_info=True, anneal_lr=True)
     
     # test the model
     # run_name = f"{env_id}_{seed}_{27}_{11}h{37}m_{20000}_vanilla"

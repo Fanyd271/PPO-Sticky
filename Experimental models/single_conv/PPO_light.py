@@ -28,24 +28,14 @@ class Agent(nn.Module):
             layer_init(nn.Linear(64 * 7 * 7, 512)),
             nn.ReLU(),
         )
-        self.infer_last = nn.Sequential(
-            layer_init(nn.Conv2d(4, 32, 8, stride=4)),
-            nn.ReLU(),
-            layer_init(nn.Conv2d(32, 64, 4, stride=2)),
-            nn.ReLU(),
-            layer_init(nn.Conv2d(64, 64, 3, stride=1)),
-            nn.ReLU(),
-            nn.Flatten(),
-            layer_init(nn.Linear(64 * 7 * 7, 1)),
-            nn.ReLU(),
-        )
         self.envs = envs
+        self.infer_last = layer_init(nn.Linear(512, 1), std=1)
         self.actor = layer_init(nn.Linear(512 + 1 , 6), std=0.01)
         self.critic = layer_init(nn.Linear(512 + 1, 1), std=1)
 
     def get_action_and_value(self, x, action=None):
         hidden = self.network(x / 255.0)
-        last_action = self.infer_last(x / 255.0)
+        last_action = F.relu(self.infer_last(hidden))
         sta_act_pair = torch.cat([hidden, last_action], 1)
         logits = self.actor(sta_act_pair)
         probs = Categorical(logits=logits)  # sigmoid
@@ -55,7 +45,7 @@ class Agent(nn.Module):
     
     def get_value(self, x):
         hidden = self.network(x / 255.0)
-        last_action = self.infer_last(x / 255.0)
+        last_action = F.relu(self.infer_last(hidden))
         sta_act_pair = torch.cat([hidden, last_action], 1)
         return self.critic(sta_act_pair)
 

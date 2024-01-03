@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 import numpy as np
-from new_PPO_newNet_light import Agent
+from PPO_light import Agent
 import gymnasium as gym
 import time
 from torch.distributions.categorical import Categorical
@@ -267,7 +267,7 @@ if __name__ == "__main__":
 
     total_timesteps = 50000000 # 50M
     today = datetime.datetime.today()
-    run_name = f"{env_id}_{seed}_{today.day}_{datetime.datetime.now().hour}h{datetime.datetime.now().minute}m_{total_timesteps}_newPPO_newNet_light_10hiddenunits"
+    run_name = f"{env_id}_{seed}_{today.day}_{datetime.datetime.now().hour}h{datetime.datetime.now().minute}m_{total_timesteps}_newNet_light"
     num_steps = 128
     minibatches = 4
     learning_rate = 2.5e-4
