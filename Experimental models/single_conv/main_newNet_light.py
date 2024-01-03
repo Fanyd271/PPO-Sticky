@@ -272,7 +272,7 @@ if __name__ == "__main__":
     minibatches = 4
     learning_rate = 2.5e-4
     train_ppo(agent, device, run_name, total_timesteps, seed, num_steps, num_envs, minibatches, learning_rate,
-              record_info=True, anneal_lr=True, early_stop = 20000)
+              record_info=True, anneal_lr=True)
     
     # test the model
     # run_name = f"{env_id}_{seed}_{27}_{11}h{37}m_{20000}_vanilla"

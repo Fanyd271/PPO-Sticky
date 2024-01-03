@@ -221,18 +221,18 @@ def train_ppo(agent, device, run_name, total_timesteps, seed, num_steps, num_env
     envs.close()
     if record_info:
         make_dir("model/"+run_name)
-        torch.save(agent.actor.state_dict(), "./model/"+run_name+f"/actor_{early_stop}.pth")
-        torch.save(agent.critic.state_dict(), "./model/"+run_name+f"/critic_{early_stop}.pth")
-        torch.save(agent.network.state_dict(), "./model/"+run_name+f"/network_{early_stop}.pth")
-        torch.save(agent.infer_last.state_dict(), "./model/"+run_name+f"/infer_last_{early_stop}.pth")
+        torch.save(agent.actor.state_dict(), "./model/"+run_name+f"/actor.pth")
+        torch.save(agent.critic.state_dict(), "./model/"+run_name+f"/critic.pth")
+        torch.save(agent.network.state_dict(), "./model/"+run_name+f"/network.pth")
+        torch.save(agent.infer_last.state_dict(), "./model/"+run_name+f"/infer_last.pth")
 
 
 def test(device, env_id, path, episodes, render=True, capture_video=False):
     print("--------Start testing-----------")
     env = wrap_env(env_id, path, render=render, capture_video=capture_video)()
     agent = Agent(env).to(device)
-    agent.actor.load_state_dict(torch.load("./model/"+path+"/al1.pth"))
-    agent.critic.load_state_dict(torch.load("./model/"+path+"/al2.pth"))
+    agent.actor.load_state_dict(torch.load("./model/"+path+"/actor.pth"))
+    agent.critic.load_state_dict(torch.load("./model/"+path+"/critic.pth"))
     agent.network.load_state_dict(torch.load("./model/"+path+"/network.pth"))
     agent.infer_last.load_state_dict(torch.load("./model/"+path+"/infer_last.pth"))
     for _ in range(episodes):
